@@ -24,6 +24,7 @@ import (
 	handler "github.com/xtls/xray-core/app/proxyman/command"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"proxyk-admin/internal/domain"
 )
 
 const stageTwoPayload = "response through VLESS"
@@ -41,8 +42,19 @@ func TestStageTwoVPNUserLifecycle(t *testing.T) {
 	target.StartTLS()
 	t.Cleanup(target.Close)
 	var requests atomic.Int64
-	site := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	streamEnd := make(chan struct{})
+	streamPayload := strings.Repeat("x", 256<<10)
+	site := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
+		if r.URL.Path == "/stream" {
+			io.WriteString(w, streamPayload)
+			w.(http.Flusher).Flush()
+			select {
+			case <-streamEnd:
+			case <-r.Context().Done():
+				return
+			}
+		}
 		fmt.Fprint(w, stageTwoPayload)
 	}))
 	t.Cleanup(site.Close)
@@ -67,6 +79,7 @@ func TestStageTwoVPNUserLifecycle(t *testing.T) {
 	}
 	t.Cleanup(func() { connection.Close() })
 	handlers := handler.NewHandlerServiceClient(connection)
+	stopApp := start(t, env, app, "serve")
 
 	name := "Тест & /?"
 	id := strings.TrimSpace(string(run(t, env, app, "vpn-user", "create", name)))
@@ -76,8 +89,12 @@ func TestStageTwoVPNUserLifecycle(t *testing.T) {
 	}
 	link := stageTwoLink(t, env, app, id, name, vpnPort)
 	email := "proxyk-user-" + id
-	stopApp := start(t, env, app, "serve")
 	waitStageTwoUser(t, handlers, email, true)
+	qrPath := filepath.Join(dir, "connection.png")
+	run(t, env, app, "vpn-user", "qr", id, qrPath)
+	if info, err := os.Stat(qrPath); err != nil || info.Mode().Perm() != 0600 {
+		t.Fatal("QR was not saved privately")
+	}
 	clientConfig := writeStageTwoClient(t, dir, proxyPort, vpnPort, link)
 	start(t, env, xray, "run", "-config", clientConfig)
 	transport := &http.Transport{
@@ -106,6 +123,7 @@ func TestStageTwoVPNUserLifecycle(t *testing.T) {
 		users[0].Name != renamed || !users[0].Enabled || strings.Contains(string(listed), link.User.Username()) {
 		t.Fatal("list did not return the renamed user without connection credentials")
 	}
+	idleID := strings.TrimSpace(string(run(t, env, app, "vpn-user", "create", "Idle")))
 
 	run(t, env, app, "vpn-user", "disable", id)
 	waitStageTwoUser(t, handlers, email, false)
@@ -115,14 +133,82 @@ func TestStageTwoVPNUserLifecycle(t *testing.T) {
 	waitStageTwoUser(t, handlers, email, true)
 	waitStageTwoPayload(t, client, site.URL)
 
+	beforeRestart := readStageTwoTraffic(t, env, app, id)
 	stopXray()
-	start(t, env, xray, "run", "-config", configPath)
+	stopXray = start(t, env, xray, "run", "-config", configPath)
 	waitStageTwoUser(t, handlers, email, true)
+	waitStageTwoPayload(t, client, site.URL)
+	waitStageTwoTraffic(t, env, app, id, beforeRestart.UplinkBytes+1, beforeRestart.DownlinkBytes+1)
+
+	beforeQuota := readStageTwoTraffic(t, env, app, id)
+	limit := beforeQuota.UplinkBytes + beforeQuota.DownlinkBytes + (64 << 10)
+	run(t, env, app, "vpn-user", "limit", id, strconv.FormatInt(limit, 10))
+	// Keep this connection open while its traffic exhausts the quota. Xray's
+	// RemoveUser revokes new connections but does not terminate this stream.
+	streamClient := &http.Client{Transport: transport, Timeout: 20 * time.Second}
+	stream, err := streamClient.Get(site.URL + "/stream")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Body.Close()
+	if _, err := io.ReadFull(stream.Body, make([]byte, len(streamPayload))); err != nil {
+		t.Fatal(err)
+	}
+	waitStageTwoUser(t, handlers, email, false)
+	requireStageTwoBlocked(t, client, site.URL, &requests)
+	requireStageTwoNoLink(t, env, app, id)
+	close(streamEnd)
+	tail, err := io.ReadAll(stream.Body)
+	if err != nil || string(tail) != stageTwoPayload {
+		t.Fatalf("existing tunnel was interrupted: %v", err)
+	}
+	blockedTraffic := waitStageTwoTraffic(t, env, app, id, beforeQuota.UplinkBytes+1, beforeQuota.DownlinkBytes+int64(len(streamPayload)))
+	if blockedTraffic.UplinkBytes+blockedTraffic.DownlinkBytes < limit {
+		t.Fatal("quota block before quota was consumed")
+	}
+	requireStageTwoCommandFailure(t, env, app, "enable", id)
+	if idle := readStageTwoTraffic(t, env, app, idleID); idle.UplinkBytes != 0 || idle.DownlinkBytes != 0 {
+		t.Fatal("traffic charged to another user")
+	}
+
+	stopApp()
+	stopXray()
+	stopXray = start(t, env, xray, "run", "-config", configPath)
+	stopApp = start(t, env, app, "serve")
+	waitStageTwoUser(t, handlers, "proxyk-user-"+idleID, true)
+	waitStageTwoUser(t, handlers, email, false)
+	waitStageTwoTraffic(t, env, app, id, blockedTraffic.UplinkBytes, blockedTraffic.DownlinkBytes)
+	requireStageTwoNoLink(t, env, app, id)
+	run(t, env, app, "vpn-user", "limit", id, "unlimited")
+	requireStageTwoNoLink(t, env, app, id)
+	run(t, env, app, "vpn-user", "enable", id)
 	waitStageTwoPayload(t, client, site.URL)
 
 	stopApp()
-	run(t, env, app, "vpn-user", "delete", id)
+	stopXray()
+	readStageTwoTraffic(t, env, app, id) // Saved totals remain readable with Xray stopped.
+	start(t, env, xray, "run", "-config", configPath)
+	waitStageTwoUser(t, handlers, email, false)
+	requireStageTwoNoLink(t, env, app, id) // Old acknowledgement is insufficient after restart.
+	requireStageTwoCommandFailure(t, env, app, "create", "Pending")
+	var pendingUsers []domain.VPNUser
+	if err := json.Unmarshal(run(t, env, app, "vpn-user", "list"), &pendingUsers); err != nil {
+		t.Fatal(err)
+	}
+	var pendingID string
+	for _, user := range pendingUsers {
+		if user.Name == "Pending" && user.Pending {
+			pendingID = strconv.FormatInt(user.ID, 10)
+		}
+	}
+	if pendingID == "" {
+		t.Fatal("failed create did not preserve a recoverable pending user")
+	}
+	requireStageTwoNoLink(t, env, app, pendingID)
+	requireStageTwoCommandFailure(t, env, app, "delete", id)
 	start(t, env, app, "serve")
+	waitStageTwoUser(t, handlers, "proxyk-user-"+pendingID, true)
+	stageTwoLink(t, env, app, pendingID, "Pending", vpnPort)
 	waitStageTwoUser(t, handlers, email, false)
 	requireStageTwoBlocked(t, client, site.URL, &requests)
 	requireStageTwoNoLink(t, env, app, id)
@@ -294,17 +380,42 @@ func requireStageTwoBlocked(t *testing.T, client *http.Client, address string, r
 
 func requireStageTwoTraffic(t *testing.T, env []string, app, id string) {
 	t.Helper()
-	var traffic struct {
-		Uplink   int64 `json:"uplink_bytes"`
-		Downlink int64 `json:"downlink_bytes"`
+	traffic := waitStageTwoTraffic(t, env, app, id, 1, 1)
+	waitStageTwoTraffic(t, env, app, id, traffic.UplinkBytes, traffic.DownlinkBytes)
+}
+
+func readStageTwoTraffic(t *testing.T, env []string, app, id string) domain.VPNTraffic {
+	t.Helper()
+	var traffic domain.VPNTraffic
+	if err := json.Unmarshal(run(t, env, app, "vpn-user", "traffic", id), &traffic); err != nil {
+		t.Fatal(err)
 	}
-	for range 2 {
-		previous := traffic
-		output := run(t, env, app, "vpn-user", "traffic", id)
-		if err := json.Unmarshal(output, &traffic); err != nil || traffic.Uplink <= 0 || traffic.Downlink <= 0 ||
-			traffic.Uplink < previous.Uplink || traffic.Downlink < previous.Downlink {
-			t.Fatal("traffic must report both Xray counters without resetting them")
+	return traffic
+}
+
+func waitStageTwoTraffic(t *testing.T, env []string, app, id string, up, down int64) domain.VPNTraffic {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		traffic := readStageTwoTraffic(t, env, app, id)
+		if traffic.UplinkBytes >= up && traffic.DownlinkBytes >= down {
+			return traffic
 		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatal("persistent traffic did not reach expected totals")
+	return domain.VPNTraffic{}
+}
+
+func requireStageTwoCommandFailure(t *testing.T, env []string, app string, args ...string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, app, append([]string{"vpn-user"}, args...)...)
+	command.Env = env
+	output, err := command.CombinedOutput()
+	if err == nil || ctx.Err() != nil || strings.Contains(string(output), "vless://") {
+		t.Fatalf("expected a bounded failure from %s", args[0])
 	}
 }
 

@@ -93,7 +93,7 @@ func desiredUsers(users []domain.VPNUser) (map[string]inboundUser, error) {
 	desired := make(map[string]inboundUser, len(users))
 	keys := make(map[[16]byte]bool, len(users))
 	for _, user := range users {
-		if !user.Enabled {
+		if !user.Allowed() {
 			continue
 		}
 		email := vpnUserEmail(user.ID)

@@ -7,23 +7,31 @@ import (
 	"fmt"
 	"io"
 	"strconv"
-	"time"
 
 	"proxyk-admin/internal/adapter/repository/sqlite"
 	"proxyk-admin/internal/adapter/xray"
+	"proxyk-admin/internal/domain"
+	"proxyk-admin/internal/service"
 	"proxyk-admin/internal/usecase"
 )
 
-const vpnUserUsage = `usage: proxyk-admin vpn-user create NAME
+const vpnUserUsage = `usage: proxyk-admin vpn-user create NAME [LIMIT_BYTES|unlimited]
        proxyk-admin vpn-user list
        proxyk-admin vpn-user rename ID NAME
+       proxyk-admin vpn-user limit ID LIMIT_BYTES|unlimited
+       proxyk-admin vpn-user qr ID OUTPUT.png
        proxyk-admin vpn-user enable|disable|delete|link|traffic ID`
 
 func runVPNUser(ctx context.Context, store *sqlite.Store, xrayAddr string, args []string, out io.Writer) error {
 	if len(args) == 0 {
 		return errors.New(vpnUserUsage)
 	}
-	users := usecase.VPNUsers{Store: store}
+	client, err := xray.New(xrayAddr)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	users := usecase.VPNUsers{Store: store, Xray: client}
 	switch args[0] {
 	case "list":
 		if len(args) != 1 {
@@ -35,26 +43,33 @@ func runVPNUser(ctx context.Context, store *sqlite.Store, xrayAddr string, args 
 		}
 		return json.NewEncoder(out).Encode(list)
 	case "create":
-		if len(args) != 2 {
+		if len(args) < 2 || len(args) > 3 {
 			return errors.New(vpnUserUsage)
 		}
-		user, err := users.Create(ctx, args[1])
+		var limit *int64
+		if len(args) == 3 {
+			limit, err = parseTrafficLimit(args[2])
+			if err != nil {
+				return err
+			}
+		}
+		user, err := users.Create(ctx, args[1], limit)
 		if err != nil {
 			return err
 		}
 		_, err = fmt.Fprintln(out, user.ID)
 		return err
-	case "rename", "enable", "disable", "delete", "link", "traffic":
-		return runVPNUserByID(ctx, users, xrayAddr, args, out)
+	case "rename", "enable", "disable", "delete", "link", "traffic", "limit", "qr":
+		return runVPNUserByID(ctx, users, args, out)
 	default:
 		return errors.New(vpnUserUsage)
 	}
 }
 
-func runVPNUserByID(ctx context.Context, users usecase.VPNUsers, xrayAddr string, args []string, out io.Writer) error {
+func runVPNUserByID(ctx context.Context, users usecase.VPNUsers, args []string, out io.Writer) error {
 	operation := args[0]
 	wantArgs := 2
-	if operation == "rename" {
+	if operation == "rename" || operation == "limit" || operation == "qr" {
 		wantArgs = 3
 	}
 	if len(args) != wantArgs {
@@ -68,9 +83,15 @@ func runVPNUserByID(ctx context.Context, users usecase.VPNUsers, xrayAddr string
 	case "rename":
 		return users.Rename(ctx, id, args[2])
 	case "enable", "disable":
-		return users.Store.SetVPNUserEnabled(ctx, id, operation == "enable")
+		return users.SetEnabled(ctx, id, operation == "enable")
 	case "delete":
-		return users.Store.DeleteVPNUser(ctx, id)
+		return users.Delete(ctx, id)
+	case "limit":
+		limit, err := parseTrafficLimit(args[2])
+		if err != nil {
+			return err
+		}
+		return users.SetLimit(ctx, id, limit)
 	case "link":
 		link, err := users.Link(ctx, id)
 		if err != nil {
@@ -78,27 +99,30 @@ func runVPNUserByID(ctx context.Context, users usecase.VPNUsers, xrayAddr string
 		}
 		_, err = fmt.Fprintln(out, link)
 		return err
+	case "qr":
+		data, err := users.QR(ctx, id)
+		if err != nil {
+			return err
+		}
+		return service.WritePrivate(args[2], data)
 	case "traffic":
-		return printVPNTraffic(ctx, users.Store, xrayAddr, id, out)
+		user, err := users.Store.VPNUser(ctx, id)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(out).Encode(domain.VPNTraffic{UplinkBytes: user.UplinkBytes, DownlinkBytes: user.DownlinkBytes})
 	default:
 		return errors.New(vpnUserUsage)
 	}
 }
 
-func printVPNTraffic(ctx context.Context, store *sqlite.Store, address string, id int64, out io.Writer) error {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	if _, err := store.VPNUser(ctx, id); err != nil {
-		return err
+func parseTrafficLimit(value string) (*int64, error) {
+	if value == "unlimited" {
+		return nil, nil
 	}
-	client, err := xray.New(address)
-	if err != nil {
-		return err
+	limit, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || limit < 0 {
+		return nil, errors.New("traffic limit must be a non-negative byte count or unlimited")
 	}
-	defer client.Close()
-	traffic, err := client.Traffic(ctx, id)
-	if err != nil {
-		return err
-	}
-	return json.NewEncoder(out).Encode(traffic)
+	return &limit, nil
 }

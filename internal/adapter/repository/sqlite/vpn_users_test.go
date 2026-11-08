@@ -63,7 +63,7 @@ func TestVPNUsersOnStageOneDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 	user.Name, user.Enabled = "Travel laptop", false
-	if len(users) != 1 || users[0] != user {
+	if len(users) != 1 || users[0].ID != user.ID || users[0].UUID != user.UUID || users[0].Name != user.Name || users[0].Enabled || users[0].CreatedAt == "" || users[0].BlockedReason != "manual" {
 		t.Fatal("stored user did not survive reopen")
 	}
 	encoded, err := json.Marshal(users)
@@ -74,6 +74,13 @@ func TestVPNUsersOnStageOneDatabase(t *testing.T) {
 		t.Fatal("public user metadata exposed the VPN credential")
 	}
 	if err := reopened.DeleteVPNUser(ctx, user.ID); err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := reopened.VPNUser(ctx, user.ID)
+	if err != nil || !deleted.DeletePending {
+		t.Fatalf("delete must remain pending until Xray confirms: %v", err)
+	}
+	if err := reopened.ConfirmVPNUsers(ctx, []domain.VPNUser{deleted}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := reopened.VPNUser(ctx, user.ID); !errors.Is(err, domain.ErrVPNUserNotFound) {
@@ -114,5 +121,47 @@ func seedStageOne(t *testing.T, path string) {
 	checksum := fmt.Sprintf("%x", sha256.Sum256(body))
 	if _, err := db.Exec(`INSERT INTO schema_migrations (version, checksum) VALUES ('0001_initial.sql', ?)`, checksum); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestStageTwoMigrationPreservesExistingUsers(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "app.db")
+	seedStageOne(t, path)
+	body, err := os.ReadFile(filepath.Join("..", "..", "..", "migration", "0002_vpn_users.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(string(body)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO schema_migrations(version,checksum) VALUES ('0002_vpn_users.sql',?)`, fmt.Sprintf("%x", sha256.Sum256(body))); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO vpn_users(id,uuid,name,enabled) VALUES (7,'old-active','Active',1),(8,'old-blocked','Blocked',0)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err := sqlite.Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.DB.Close()
+	users, err := store.ListVPNUsers(ctx)
+	if err != nil || len(users) != 2 {
+		t.Fatalf("migration lost users: %v", err)
+	}
+	if users[0].ID != 7 || users[0].UUID != "old-active" || !users[0].Allowed() || users[0].TrafficLimitBytes != nil || users[0].TotalBytes != 0 || users[0].CreatedAt == "" {
+		t.Fatal("migration changed existing active user")
+	}
+	if users[1].ID != 8 || users[1].UUID != "old-blocked" || users[1].Allowed() || users[1].BlockedReason != "manual" {
+		t.Fatal("migration re-enabled blocked user")
 	}
 }

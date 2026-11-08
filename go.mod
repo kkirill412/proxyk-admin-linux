@@ -4,6 +4,8 @@ go 1.27.3
 
 require (
 	github.com/google/uuid v1.6.0
+	github.com/makiuchi-d/gozxing v0.1.1
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/xtls/xray-core v1.260327.1-0.20261031132019-a4a3dff5b20c
 	golang.org/x/crypto v0.58.0
 	google.golang.org/grpc v1.85.0
@@ -33,6 +35,7 @@ require (
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
+	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260817212433-ac3dfec99bb1 // indirect
 	layeh.com/gopher-luar v1.0.11 // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect

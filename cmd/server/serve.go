@@ -35,7 +35,14 @@ func serve(ctx context.Context, cfg config.Config, store *sqlite.Store) error {
 	if err != nil {
 		return err
 	}
-	userSync := &usecase.VPNUserSync{Store: store, Xray: xrayClient}
+	lock, err := service.CollectorLock(filepath.Join(cfg.DataDir, "traffic.lock"))
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	collector := &usecase.TrafficCollector{Store: store, Xray: xrayClient,
+		JournalPath: filepath.Join(cfg.DataDir, "traffic-pending.json")}
+	userSync := &usecase.VPNUserSync{Store: store, Xray: xrayClient, Traffic: collector}
 	syncCtx, cancelSync := context.WithCancel(ctx)
 	syncDone := make(chan struct{})
 	go func() {
