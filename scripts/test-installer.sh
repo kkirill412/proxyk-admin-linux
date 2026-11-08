@@ -24,6 +24,117 @@ with socket.socket() as listener:
 PY
 TEMP_DIR=$(mktemp -d)
 trap 'rm -rf -- "$TEMP_DIR"' EXIT
+
+# Run each Docker scenario in a separate shell so failures retain errexit behavior.
+# Package and service commands are mocked: these tests never modify the host.
+test_docker_install() {
+    # shellcheck source=lib/common.sh
+    source "$1/scripts/lib/common.sh"
+    # shellcheck source=lib/host.sh
+    source "$1/scripts/lib/host.sh"
+    local scenario=$2 log=$3
+    local docker_installed=0 compose_installed=0 docker_running=0
+    local installed_packages='' service_failure=0 package_failure=0 repository_failure=0 broken_compose=0
+    unset INSTALL_DOCKER
+    NONINTERACTIVE=1
+    case "$scenario" in
+        fresh|repeat) ;;
+        conflicts) docker_installed=1; installed_packages='docker.io docker-compose docker-compose-v2 docker-doc docker-buildx podman-docker containerd runc' ;;
+        compose_missing) docker_installed=1; docker_running=1 ;;
+        ready) docker_installed=1; compose_installed=1; docker_running=1; INSTALL_DOCKER=0 ;;
+        stopped) docker_installed=1; compose_installed=1 ;;
+        disabled) INSTALL_DOCKER=0 ;;
+        service_failure) docker_installed=1; compose_installed=1; service_failure=1 ;;
+        package_failure) package_failure=1 ;;
+        repository_failure) repository_failure=1; installed_packages='docker.io' ;;
+        broken_compose) broken_compose=1 ;;
+        *) fail "Неизвестный сценарий: $scenario" ;;
+    esac
+    # shellcheck disable=SC2329 # Overrides the builtin in sourced installer code.
+    command() {
+        if [[ $* == '-v docker' ]]; then [[ $docker_installed == 1 ]]; else builtin command "$@"; fi
+    }
+    docker() {
+        case "$*" in
+            'compose version') [[ $compose_installed == 1 ]] ;;
+            info) [[ $docker_running == 1 ]] ;;
+            *) fail "Неожиданная команда Docker: $*" ;;
+        esac
+    }
+    # shellcheck disable=SC2329 # Guard against reintroducing an interactive prompt.
+    ask_yes() { fail 'Установка Docker запросила подтверждение.'; }
+    configure_docker_repository() {
+        printf 'repository\n' >>"$log"
+        if (( repository_failure )); then return 1; fi
+    }
+    dpkg-query() {
+        if [[ " $installed_packages " == *" $3 "* ]]; then
+            printf 'install ok installed'
+        else
+            # Residual configuration files must not be treated as installed packages.
+            printf 'deinstall ok config-files'
+        fi
+    }
+    apt-get() {
+        printf 'apt-get %s\n' "$*" >>"$log"
+        if [[ $1 != update ]]; then
+            [[ ${DEBIAN_FRONTEND:-} == noninteractive ]] || fail 'APT требует интерактивный ввод.'
+        fi
+        case "$*" in
+            update|'install -y ca-certificates curl') ;;
+            'remove -y --no-auto-remove '*)
+                [[ $* == "remove -y --no-auto-remove $installed_packages" ]] || fail 'Удаляются лишние пакеты.'
+                installed_packages=''
+                ;;
+            'install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin')
+                [[ -z $installed_packages ]] || fail 'Конфликтующие пакеты не заменены.'
+                if (( package_failure )); then return 1; fi
+                docker_installed=1
+                if (( ! broken_compose )); then compose_installed=1; fi
+                ;;
+            *) fail "Неожиданная команда APT: $*" ;;
+        esac
+    }
+    systemctl() {
+        printf 'systemctl %s\n' "$*" >>"$log"
+        [[ $* == 'enable --now docker' ]] || fail 'Неожиданная команда systemctl.'
+        if (( service_failure )); then return 1; fi
+        docker_running=1
+    }
+    ensure_docker
+    [[ $docker_installed == 1 && $compose_installed == 1 && $docker_running == 1 ]] || fail 'Docker не готов.'
+    if [[ $scenario == repeat ]]; then ensure_docker; fi
+}
+export -f test_docker_install
+for scenario in fresh conflicts compose_missing ready stopped repeat disabled service_failure package_failure repository_failure broken_compose; do
+    log=$TEMP_DIR/docker-$scenario.log
+    : >"$log"
+    if bash -Eeuo pipefail -c 'test_docker_install "$@"' _ "$ROOT" "$scenario" "$log" >"$log.output" 2>&1; then
+        case "$scenario" in
+            disabled|*_failure|broken_compose) fail "Ошибочный сценарий Docker завершился успешно: $scenario" ;;
+        esac
+    else
+        case "$scenario" in
+            disabled|*_failure|broken_compose) ;;
+            *) cat "$log.output" >&2; fail "Не пройден сценарий Docker: $scenario" ;;
+        esac
+    fi
+    case "$scenario" in
+        ready|disabled) [[ ! -s $log ]] || fail 'Готовый Docker или запрет установки вызвали изменения системы.' ;;
+        stopped|service_failure) [[ $(cat "$log") == 'systemctl enable --now docker' ]] || fail 'Вместо запуска Docker переустанавливаются пакеты.' ;;
+        fresh|conflicts|compose_missing|repeat)
+            [[ $(grep -c '^apt-get install -y docker-ce ' "$log") == 1 ]] || fail 'Docker не установлен или переустановлен повторно.'
+            grep -qx 'systemctl enable --now docker' "$log" || fail 'Не включён автозапуск Docker.'
+            if [[ $scenario != conflicts ]] && grep -q '^apt-get remove ' "$log"; then fail 'Удаляются отсутствующие пакеты.'; fi
+            ;;
+        package_failure)
+            if grep -q '^systemctl ' "$log"; then fail 'Установка продолжается после ошибки APT.'; fi
+            ;;
+        repository_failure)
+            if grep -Eq '^apt-get (remove|install -y docker-ce)|^systemctl ' "$log"; then fail 'Пакеты изменены после ошибки репозитория.'; fi
+            ;;
+    esac
+done
 (
     INSTALL_DIR=$TEMP_DIR/first
     mkdir -p "$INSTALL_DIR"

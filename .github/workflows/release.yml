@@ -1,0 +1,57 @@
+name: Publish release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Verify release files
+        shell: bash
+        run: |
+          test "$GITHUB_REF_TYPE" = tag
+          test "$RELEASE_TAG" = "v$(cat VERSION)"
+          bash scripts/test-installer.sh
+          bash -n bin/release/install.sh
+          (cd bin/release && sha256sum --check SHA256SUMS)
+          cp bin/release/SHA256SUMS "$RUNNER_TEMP/release-checksums"
+          make release RELEASE_BASE_URL="https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG"
+          cmp bin/release/SHA256SUMS "$RUNNER_TEMP/release-checksums"
+      - name: Publish release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --verify-tag --prerelease \
+              --title "ProxyK Admin $RELEASE_TAG" --notes-file docs/release-notes.md
+          fi
+          existing=$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')
+          mkdir -p "$RUNNER_TEMP/release-assets"
+          for name in install.sh "proxyk-admin-$(cat VERSION).tar.gz" SHA256SUMS; do
+            if grep -Fxq "$name" <<<"$existing"; then
+              gh release download "$RELEASE_TAG" --pattern "$name" --dir "$RUNNER_TEMP/release-assets"
+              cmp "bin/release/$name" "$RUNNER_TEMP/release-assets/$name"
+            else
+              gh release upload "$RELEASE_TAG" "bin/release/$name"
+            fi
+          done
+          gh release edit "$RELEASE_TAG" --notes-file docs/release-notes.md

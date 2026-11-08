@@ -15,7 +15,7 @@ test-native: build
 	bash scripts/test-native.sh
 
 check-shell:
-	shellcheck -x scripts/*.sh scripts/lib/*.sh
+	shellcheck -x -P SCRIPTDIR scripts/*.sh scripts/lib/*.sh
 
 release:
 	bash scripts/pack-release.sh "$(RELEASE_BASE_URL)"

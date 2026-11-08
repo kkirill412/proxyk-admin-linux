@@ -1,4 +1,9 @@
-/bin/
+/bin/*
+!/bin/release/
+/bin/release/*
+!/bin/release/install.sh
+!/bin/release/proxyk-admin-*.tar.gz
+!/bin/release/SHA256SUMS
 /.idea/
 /web/node_modules/
 /web/dist/

@@ -15,7 +15,8 @@
 - Публичный IPv4, назначенный серверу. За NAT нужны явный `PUBLIC_IP`,
   `ALLOW_NAT=1` и проброс портов.
 - Docker Engine и Docker Compose Plugin с поддержкой `up --wait`.
-  Установщик предлагает поставить их из официального репозитория Docker.
+  Если их нет, установщик автоматически ставит их из официального репозитория Docker
+  и запускает службу. Подтверждение и `INSTALL_DOCKER=1` не требуются.
 - Для сборки на сервере рекомендуется 2 ГБ RAM и 4 ГБ свободного диска.
   Это рекомендация для сборки, не измеренный минимум работающей панели.
 - Входящий TCP: выбранный порт панели (по умолчанию 2053), VPN 443 либо 8443,
@@ -24,7 +25,13 @@
 
 Docker публикует порты собственными правилами; обычного UFW может быть недостаточно.
 Ограничивайте доступ к панели в firewall провайдера или цепочке `DOCKER-USER`.
-Установщик не меняет firewall и не удаляет существующие Docker-пакеты.
+Установщик не меняет firewall. При установке Docker конфликтующие пакеты дистрибутива
+(`docker.io`, `docker-compose`, `docker-compose-v2`, `docker-doc`, `docker-buildx`,
+`podman-docker`, `containerd`, `runc`) автоматически заменяются официальными.
+Очистка данных Docker и `apt purge` / `autoremove` не выполняются, но замена пакетов
+может прервать работу существующих контейнеров. Готовая работающая установка Docker
+с Compose используется без переустановки. Для запрета установки пакетов Docker
+можно явно задать `INSTALL_DOCKER=0`.
 
 ## Установка из публичного репозитория
 
@@ -54,13 +61,13 @@ HTTPS проверяется с валидацией сертификата и I
 Для неинтерактивной установки с публичным сертификатом:
 
 ```bash
-sudo env ADMIN_PORT=2053 NONINTERACTIVE=1 INSTALL_DOCKER=1 TLS_MODE=acme bash scripts/install.sh
+sudo env ADMIN_PORT=2053 NONINTERACTIVE=1 TLS_MODE=acme bash scripts/install.sh
 ```
 
 Для явно выбранного резервного HTTPS:
 
 ```bash
-sudo env ADMIN_PORT=2053 NONINTERACTIVE=1 INSTALL_DOCKER=1 TLS_MODE=selfsigned bash scripts/install.sh
+sudo env ADMIN_PORT=2053 NONINTERACTIVE=1 TLS_MODE=selfsigned bash scripts/install.sh
 ```
 
 В режиме `TLS_MODE=auto` (по умолчанию) при неудаче ACME установщик запрашивает
@@ -73,21 +80,36 @@ sudo env ADMIN_PORT=2053 NONINTERACTIVE=1 INSTALL_DOCKER=1 TLS_MODE=selfsigned b
 
 ### Однокомандная установка через HTTPS
 
-Установка из Git доступна сейчас. Для варианта `curl | sudo bash` требуется отдельный
-релиз с архивом и подготовленным установщиком; такой релиз пока не опубликован.
+Установка версии 0.1.0 из [GitHub Release](https://github.com/kkirill412/proxyk-admin-linux/releases/tag/v0.1.0):
+
+```bash
+curl -fsSL https://github.com/kkirill412/proxyk-admin-linux/releases/download/v0.1.0/install.sh | sudo bash
+```
+
+Docker Engine, Compose Plugin и недостающие системные зависимости устанавливаются
+автоматически. Скрипт запрашивает порт панели; для установки без ввода:
+
+```bash
+curl -fsSL https://github.com/kkirill412/proxyk-admin-linux/releases/download/v0.1.0/install.sh | sudo env ADMIN_PORT=2053 NONINTERACTIVE=1 TLS_MODE=acme bash
+```
+
 Прямая передача `scripts/install.sh` с `raw.githubusercontent.com` в Bash без исходников
 не сработает: скрипту нужны файлы проекта либо `SOURCE_URL` и `SOURCE_SHA256`.
 
-Для подготовки релиза 0.1.0 выполните из клона проекта:
+Для подготовки файлов релиза выполните из клона проекта:
 
 ```bash
 make release RELEASE_BASE_URL=https://github.com/kkirill412/proxyk-admin-linux/releases/download/v0.1.0
 ```
 
-Создайте [GitHub Release](https://github.com/kkirill412/proxyk-admin-linux/releases)
-с тегом `v0.1.0` для нужного коммита и приложите три файла из `bin/release`:
-`install.sh`, `proxyk-admin-0.1.0.tar.gz`, `SHA256SUMS`. Генератор выведет команду
-`curl -fsSL …/install.sh | sudo bash`, которая станет доступна после публикации файлов.
+Три файла `bin/release/install.sh`, `bin/release/proxyk-admin-0.1.0.tar.gz` и
+`bin/release/SHA256SUMS` хранятся в Git и прикладываются к GitHub Release соответствующей
+версии. Остальные файлы `bin` игнорируются. При выпуске новой версии обновите `VERSION`
+и адрес `RELEASE_BASE_URL`; опубликованные архивы уже выпущенных версий не заменяйте.
+После отправки тега `v<VERSION>` workflow `Publish release` проверяет файлы,
+повторяемость сборки архива и загружает их в GitHub Release. Уже загруженные файлы
+сверяются с локальными; при несовпадении публикация останавливается без перезаписи.
+Пока реализован только этап 1, новые релизы автоматически помечаются `prerelease`.
 В выпущенный установщик встроены URL архива и его SHA-256; до распаковки проверяется
 хеш, пути архива и отсутствие ссылок. URL не должен указывать на изменяемый архив.
 HTTPS защищает доставку самого установщика; SHA-256 не заменяет доверие к издателю.

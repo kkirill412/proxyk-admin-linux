@@ -2,18 +2,39 @@
 
 ensure_docker() {
     if command -v docker >/dev/null && docker compose version >/dev/null 2>&1; then
-        docker info >/dev/null 2>&1 || fail 'Docker установлен, но недоступен. Запустите Docker и повторите установку.'
-        return
+        if docker info >/dev/null 2>&1; then return; fi
+        info 'Запускается установленный Docker.'
+    else
+        [[ ${INSTALL_DOCKER:-1} == 1 ]] || fail 'Нужны Docker Engine и Compose Plugin. Уберите INSTALL_DOCKER=0 для автоматической установки.'
+        info 'Автоматическая установка Docker Engine и Compose Plugin из официального репозитория.'
+        install_docker
     fi
-    if [[ ${INSTALL_DOCKER:-0} != 1 ]] && ! ask_yes 'Установить Docker Engine и Compose Plugin из официального репозитория?'; then
-        fail 'Нужны Docker Engine и Compose Plugin. Для автоматической установки задайте INSTALL_DOCKER=1.'
-    fi
+    systemctl enable --now docker || fail 'Не удалось запустить Docker. Проверьте systemctl status docker и journalctl -u docker.'
+    docker info >/dev/null 2>&1 || fail 'Docker недоступен после запуска. Проверьте systemctl status docker и journalctl -u docker.'
+    docker compose version >/dev/null 2>&1 || fail 'Docker Compose Plugin недоступен после установки.'
+}
+
+install_docker() {
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl
+    configure_docker_repository
+    apt-get update
+
     local package
-    for package in docker.io podman-docker containerd runc; do
+    local -a conflicts=()
+    for package in docker.io docker-compose docker-compose-v2 docker-doc docker-buildx podman-docker containerd runc; do
         if dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed'; then
-            fail "Обнаружен пакет $package. Сначала устраните конфликт по инструкции Docker; существующие пакеты не удалены."
+            conflicts+=("$package")
         fi
     done
+    if (( ${#conflicts[@]} )); then
+        info "Замена конфликтующих пакетов: ${conflicts[*]}. Данные Docker не удаляются; работа контейнеров может прерваться."
+        DEBIAN_FRONTEND=noninteractive apt-get remove -y --no-auto-remove "${conflicts[@]}"
+    fi
+    DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+}
+
+configure_docker_repository() {
     install -m 0755 -d /etc/apt/keyrings
     curl --proto '=https' --tlsv1.2 -fsSL "https://download.docker.com/linux/$ID/gpg" -o /etc/apt/keyrings/docker.asc
     chmod 644 /etc/apt/keyrings/docker.asc
@@ -25,11 +46,7 @@ Components: stable
 Architectures: $(dpkg --print-architecture)
 Signed-By: /etc/apt/keyrings/docker.asc
 EOF
-    apt-get update
-    DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-    systemctl enable --now docker
-    docker info >/dev/null
-    docker compose version >/dev/null
+    chmod 644 /etc/apt/sources.list.d/docker.sources
 }
 
 choose_network() {
