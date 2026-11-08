@@ -1,11 +1,15 @@
 /bin/
+/.idea/
 /web/node_modules/
 /web/dist/
 /.env
+/.env.*
+!/.env.example
 /data/
 /tls/
 /xray/
 /acme/
+/acme-logs/
 /backups/
 *.db
 *.db-wal

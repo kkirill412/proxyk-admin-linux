@@ -26,13 +26,25 @@ Docker публикует порты собственными правилами
 Ограничивайте доступ к панели в firewall провайдера или цепочке `DOCKER-USER`.
 Установщик не меняет firewall и не удаляет существующие Docker-пакеты.
 
-## Установка из проекта
+## Установка из публичного репозитория
 
-В каталоге `proxyk-admin`:
+Репозиторий: [kkirill412/proxyk-admin-linux](https://github.com/kkirill412/proxyk-admin-linux).
+На поддерживаемом Ubuntu/Debian-сервере выполните:
 
 ```bash
+sudo apt-get update
+sudo apt-get install -y git ca-certificates curl
+git clone --depth 1 --branch main https://github.com/kkirill412/proxyk-admin-linux.git proxyk-admin
+cd proxyk-admin
 sudo bash scripts/install.sh
 ```
+
+Клонирование по HTTPS не требует аккаунта GitHub, токена или SSH-ключа.
+Команда создаёт новый каталог `proxyk-admin`; если проект уже клонирован, перейдите
+в его каталог и выполните только `sudo bash scripts/install.sh`.
+Go, Node.js и npm на сервер устанавливать не нужно: приложение и frontend собираются
+в Docker. Рабочие данные и установленная копия проекта размещаются в `/opt/proxyk-admin`.
+Ветка `main` содержит текущую разработку этапа 1; ограничения версии описаны выше.
 
 Скрипт читает ответы из `/dev/tty`, в том числе при запуске через `curl | bash`.
 Запрашивает порт панели, выбирает VPN-порт, создаёт случайного администратора,
@@ -61,15 +73,21 @@ sudo env ADMIN_PORT=2053 NONINTERACTIVE=1 INSTALL_DOCKER=1 TLS_MODE=selfsigned b
 
 ### Однокомандная установка через HTTPS
 
-Публичный адрес проекта пока не задан, поэтому готовая интернет-ссылка не выдумана.
-Для выпуска создайте проверяемый архив и установщик **из этого проекта**:
+Установка из Git доступна сейчас. Для варианта `curl | sudo bash` требуется отдельный
+релиз с архивом и подготовленным установщиком; такой релиз пока не опубликован.
+Прямая передача `scripts/install.sh` с `raw.githubusercontent.com` в Bash без исходников
+не сработает: скрипту нужны файлы проекта либо `SOURCE_URL` и `SOURCE_SHA256`.
+
+Для подготовки релиза 0.1.0 выполните из клона проекта:
 
 ```bash
-make release RELEASE_BASE_URL=https://ваш-сервер/каталог-релиза
+make release RELEASE_BASE_URL=https://github.com/kkirill412/proxyk-admin-linux/releases/download/v0.1.0
 ```
 
-Опубликуйте три файла из `bin/release` по этому HTTPS-адресу. Генератор выведет
-реальную для выбранного адреса команду `curl -fsSL …/install.sh | sudo bash`.
+Создайте [GitHub Release](https://github.com/kkirill412/proxyk-admin-linux/releases)
+с тегом `v0.1.0` для нужного коммита и приложите три файла из `bin/release`:
+`install.sh`, `proxyk-admin-0.1.0.tar.gz`, `SHA256SUMS`. Генератор выведет команду
+`curl -fsSL …/install.sh | sudo bash`, которая станет доступна после публикации файлов.
 В выпущенный установщик встроены URL архива и его SHA-256; до распаковки проверяется
 хеш, пути архива и отсутствие ссылок. URL не должен указывать на изменяемый архив.
 HTTPS защищает доставку самого установщика; SHA-256 не заменяет доверие к издателю.

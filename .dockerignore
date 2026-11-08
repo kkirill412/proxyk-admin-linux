@@ -1,12 +1,15 @@
 .git
+.idea
 bin
 web/node_modules
 web/dist
 .env
+.env.*
 data
 tls
 xray
 acme
+acme-logs
 backups
 **/*.db*
 **/*.pem
