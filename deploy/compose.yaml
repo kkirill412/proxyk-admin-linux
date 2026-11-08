@@ -1,0 +1,79 @@
+name: proxyk-admin
+
+x-app: &app
+  image: proxyk-admin:0.1.0
+  build:
+    context: ${SOURCE_DIR:-./source}
+    dockerfile: deploy/Dockerfile
+  user: "65532:65532"
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  pids_limit: 128
+  tmpfs: ["/tmp:size=16m,mode=1777,noexec,nosuid"]
+  environment:
+    DATA_DIR: /var/lib/proxyk-admin
+    TLS_DIR: /etc/proxyk-admin/tls
+    XRAY_CONFIG_DIR: /etc/proxyk-admin/xray
+    XRAY_ADDR: xray:10085
+    LISTEN_ADDR: :8443
+    PUBLIC_IP: ${PUBLIC_IP:?PUBLIC_IP is required}
+    VPN_PORT: ${VPN_PORT:?VPN_PORT is required}
+  logging:
+    driver: json-file
+    options: {max-size: "10m", max-file: "3"}
+
+services:
+  app:
+    <<: *app
+    restart: unless-stopped
+    ports: ["${ADMIN_PORT:?ADMIN_PORT is required}:8443/tcp"]
+    volumes:
+      - ./data:/var/lib/proxyk-admin
+      - ./tls:/etc/proxyk-admin/tls:ro
+    networks: [control, panel]
+    depends_on:
+      xray: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, /usr/local/bin/proxyk-admin, healthcheck]
+      interval: 15s
+      timeout: 6s
+      start_period: 15s
+      retries: 4
+    stop_grace_period: 15s
+
+  xray:
+    image: ghcr.io/xtls/xray-core:26.10.31
+    command: [run, -config, /etc/proxyk-admin/xray/config.json]
+    user: "65532:65532"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    restart: unless-stopped
+    ports: ["${VPN_PORT:?VPN_PORT is required}:8444/tcp"]
+    volumes: ["./xray:/etc/proxyk-admin/xray:ro"]
+    networks: [control, egress]
+    healthcheck:
+      test: [CMD, /usr/local/bin/xray, api, statsquery, --server=127.0.0.1:10085]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 4
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+
+  init:
+    <<: *app
+    profiles: [tools]
+    command: [init]
+    network_mode: none
+    volumes:
+      - ./data:/var/lib/proxyk-admin
+      - ./xray:/etc/proxyk-admin/xray
+
+networks:
+  control: {internal: true}
+  panel: {}
+  egress: {}

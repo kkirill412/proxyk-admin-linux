@@ -1,0 +1,14 @@
+.git
+bin
+web/node_modules
+web/dist
+.env
+data
+tls
+xray
+acme
+backups
+**/*.db*
+**/*.pem
+**/*.key
+**/initial-credentials.json
