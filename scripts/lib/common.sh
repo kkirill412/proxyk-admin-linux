@@ -51,6 +51,14 @@ PY
 
 compose() { docker compose --project-directory "$INSTALL_DIR" --env-file "$INSTALL_DIR/.env" -f "$INSTALL_DIR/compose.yaml" "$@"; }
 
+copy_source() {
+    local source=$1 destination=$2
+    tar -C "$source" --exclude='web/node_modules' --exclude='web/dist' \
+        -cf - VERSION go.mod go.sum cmd internal web deploy scripts .dockerignore | tar -C "$destination" -xf -
+    chmod -R go-rwx "$destination"
+    chmod +x "$destination"/scripts/*.sh
+}
+
 load_settings() {
     # Do not execute the .env file as shell code.
     local key value

@@ -82,15 +82,12 @@ PY
 
 install_source() {
     if [[ -f $INSTALL_DIR/source/VERSION ]]; then
-        cmp -s "$SOURCE_DIR/VERSION" "$INSTALL_DIR/source/VERSION" || die 'Уже установлена другая версия. Обновление относится к этапу 4; данные не изменены.'
+        cmp -s "$SOURCE_DIR/VERSION" "$INSTALL_DIR/source/VERSION" || die 'Уже установлена другая версия. Для перехода с 0.1.2 на 0.2.0 запустите установщик с --upgrade.'
         return
     fi
     local pending
     pending=$(mktemp -d "$INSTALL_DIR/.source-XXXXXXXX")
-    tar -C "$SOURCE_DIR" --exclude='web/node_modules' --exclude='web/dist' \
-        -cf - VERSION go.mod go.sum cmd internal web deploy scripts .dockerignore | tar -C "$pending" -xf -
-    chmod -R go-rwx "$pending"
-    chmod +x "$pending"/scripts/*.sh
+    copy_source "$SOURCE_DIR" "$pending"
     mv "$pending" "$INSTALL_DIR/source"
 }
 
@@ -119,10 +116,13 @@ PY
     else
         printf 'Существующий администратор сохранён; пароль не изменялся.\n'
     fi
-    printf 'Этап 1: инфраструктура доступна. Вход и управление VPN-пользователями пока не реализованы.\n'
+    printf 'Инфраструктура доступна. HTTPS и состояние Xray проверены.\n'
 }
 
 main() {
+    if (( $# > 1 )) || [[ -n ${1:-} && $1 != --upgrade ]]; then
+        die 'Использование: bash install.sh [--upgrade]'
+    fi
     check_host
     find_source
     # shellcheck source=lib/common.sh
@@ -131,6 +131,12 @@ main() {
     source "$SOURCE_DIR/scripts/lib/host.sh"
     # shellcheck source=lib/certificates.sh
     source "$SOURCE_DIR/scripts/lib/certificates.sh"
+    if [[ ${1:-} == --upgrade ]]; then
+        # shellcheck source=lib/upgrade.sh
+        source "$SOURCE_DIR/scripts/lib/upgrade.sh"
+        upgrade_stage_two
+        return
+    fi
     ensure_docker
     install -d -m 700 "$INSTALL_DIR"
     choose_network

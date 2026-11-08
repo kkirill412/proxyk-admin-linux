@@ -6,7 +6,7 @@ import (
 	"proxyk-admin/internal/service"
 )
 
-// WriteConfig installs an empty VLESS inbound. User management belongs to stage 2.
+// WriteConfig installs the VLESS inbound before its users are loaded from SQLite.
 // Never rewrite this file from the server's ordinary startup path.
 func WriteConfig(path string, settings domain.ServerSettings) error {
 	config := map[string]any{
@@ -15,7 +15,7 @@ func WriteConfig(path string, settings domain.ServerSettings) error {
 		"stats":  map[string]any{},
 		"policy": map[string]any{"levels": map[string]any{"0": map[string]any{"statsUserUplink": true, "statsUserDownlink": true}}},
 		"inbounds": []any{map[string]any{
-			"tag": "vless-reality", "listen": "0.0.0.0", "port": 8444, "protocol": "vless",
+			"tag": inboundTag, "listen": "0.0.0.0", "port": 8444, "protocol": "vless",
 			"settings": map[string]any{"clients": []any{}, "decryption": "none"},
 			"streamSettings": map[string]any{
 				"network": "raw", "security": "reality",

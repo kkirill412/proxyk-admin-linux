@@ -38,8 +38,8 @@ func run() error {
 	if command == "healthcheck" {
 		return healthcheck(ctx, cfg)
 	}
-	if command != "serve" && command != "init" && command != "reset-admin-password" {
-		return fmt.Errorf("usage: proxyk-admin [serve|init|healthcheck|reset-admin-password]")
+	if command != "serve" && command != "init" && command != "reset-admin-password" && command != "vpn-user" {
+		return fmt.Errorf("usage: proxyk-admin [serve|init|healthcheck|reset-admin-password|vpn-user]")
 	}
 	store, err := sqlite.Open(ctx, cfg.DatabasePath())
 	if err != nil {
@@ -76,6 +76,11 @@ func run() error {
 		}
 		slog.Info("administrator password changed; credentials saved to protected file")
 		return nil
+	case "vpn-user":
+		if err := store.Check(ctx); err != nil {
+			return fmt.Errorf("run init first: %w", err)
+		}
+		return runVPNUser(ctx, store, cfg.XrayAddr, os.Args[2:], os.Stdout)
 	default:
 		if err := store.Check(ctx); err != nil {
 			return fmt.Errorf("run init first: %w", err)

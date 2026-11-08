@@ -35,8 +35,19 @@ func serve(ctx context.Context, cfg config.Config, store *sqlite.Store) error {
 	if err != nil {
 		return err
 	}
+	userSync := &usecase.VPNUserSync{Store: store, Xray: xrayClient}
+	syncCtx, cancelSync := context.WithCancel(ctx)
+	syncDone := make(chan struct{})
+	go func() {
+		defer close(syncDone)
+		userSync.Run(syncCtx)
+	}()
+	defer func() {
+		cancelSync()
+		<-syncDone
+	}()
 	server := &http.Server{
-		Addr: cfg.ListenAddr, Handler: controller.Handler(usecase.Health{Database: store, Xray: xrayClient}, frontend),
+		Addr: cfg.ListenAddr, Handler: controller.Handler(usecase.Health{Database: store, Xray: userSync}, frontend),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second,
 		WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10,
 		TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12, GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
