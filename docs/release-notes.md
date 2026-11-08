@@ -1,6 +1,6 @@
-# ProxyK Admin 0.1.0
+# ProxyK Admin 0.1.1
 
-Первый технический релиз: установка инфраструктуры панели на Ubuntu/Debian,
+Техническое обновление этапа 1: установка инфраструктуры панели на Ubuntu/Debian,
 Go-приложение, SQLite, Xray-core и HTTPS.
 
 - Docker Engine и Compose Plugin устанавливаются автоматически из официального
@@ -13,7 +13,7 @@ Go-приложение, SQLite, Xray-core и HTTPS.
 Установка:
 
 ```bash
-curl -fsSL https://github.com/kkirill412/proxyk-admin-linux/releases/download/v0.1.0/install.sh | sudo bash
+curl -fsSL https://github.com/kkirill412/proxyk-admin-linux/releases/download/v0.1.1/install.sh | sudo bash
 ```
 
 Веб-авторизация, управление VPN-пользователями и выдача подключений ещё не реализованы.

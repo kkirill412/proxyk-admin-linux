@@ -4,8 +4,8 @@ set -Eeuo pipefail
 umask 077
 
 # pack-release.sh fills these values for a distributable curl | bash installer.
-RELEASE_SOURCE_URL='https://github.com/kkirill412/proxyk-admin-linux/releases/download/v0.1.0/proxyk-admin-0.1.0.tar.gz'
-RELEASE_SOURCE_SHA256='f9516789ea7e95e57d70a6ed722257f4013f0943ac89b639f6860d0f2ff9e94a'
+RELEASE_SOURCE_URL='https://github.com/kkirill412/proxyk-admin-linux/releases/download/v0.1.1/proxyk-admin-0.1.1.tar.gz'
+RELEASE_SOURCE_SHA256='0b70e8b038d88e02ec3934d409c4c997113734fd0994c247459d0fe705f412b5'
 INSTALL_DIR=${INSTALL_DIR:-/opt/proxyk-admin}
 SOURCE_DIR=${SOURCE_DIR:-}
 TEMP_SOURCE=''
