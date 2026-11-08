@@ -5,6 +5,7 @@ ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 source "$ROOT/scripts/lib/common.sh"
 # shellcheck source=lib/host.sh
 source "$ROOT/scripts/lib/host.sh"
+python3 "$ROOT/scripts/test-installer-archive.py"
 for port in 1 443 2053 65535; do valid_port "$port" || fail "Отклонён допустимый порт: $port"; done
 for port in 0 -1 65536 01 2x ' ' '2053;echo bad'; do
     if valid_port "$port"; then fail "Принят недопустимый порт: $port"; fi

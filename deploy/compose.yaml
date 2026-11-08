@@ -1,7 +1,7 @@
 name: proxyk-admin
 
 x-app: &app
-  image: proxyk-admin:0.1.1
+  image: proxyk-admin:0.1.2
   build:
     context: ${SOURCE_DIR:-./source}
     dockerfile: deploy/Dockerfile

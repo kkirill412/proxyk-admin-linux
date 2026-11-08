@@ -80,17 +80,17 @@ sudo env ADMIN_PORT=2053 NONINTERACTIVE=1 TLS_MODE=selfsigned bash scripts/insta
 
 ### Однокомандная установка через HTTPS
 
-Установка версии 0.1.1 из [GitHub Release](https://github.com/kkirill412/proxyk-admin-linux/releases/tag/v0.1.1):
+Установка версии 0.1.2 из [GitHub Release](https://github.com/kkirill412/proxyk-admin-linux/releases/tag/v0.1.2):
 
 ```bash
-curl -fsSL https://github.com/kkirill412/proxyk-admin-linux/releases/download/v0.1.1/install.sh | sudo bash
+curl -fsSL https://github.com/kkirill412/proxyk-admin-linux/releases/download/v0.1.2/install.sh | sudo bash
 ```
 
 Docker Engine, Compose Plugin и недостающие системные зависимости устанавливаются
 автоматически. Скрипт запрашивает порт панели; для установки без ввода:
 
 ```bash
-curl -fsSL https://github.com/kkirill412/proxyk-admin-linux/releases/download/v0.1.1/install.sh | sudo env ADMIN_PORT=2053 NONINTERACTIVE=1 TLS_MODE=acme bash
+curl -fsSL https://github.com/kkirill412/proxyk-admin-linux/releases/download/v0.1.2/install.sh | sudo env ADMIN_PORT=2053 NONINTERACTIVE=1 TLS_MODE=acme bash
 ```
 
 Прямая передача `scripts/install.sh` с `raw.githubusercontent.com` в Bash без исходников
@@ -99,10 +99,10 @@ curl -fsSL https://github.com/kkirill412/proxyk-admin-linux/releases/download/v0
 Для подготовки файлов релиза выполните из клона проекта:
 
 ```bash
-make release RELEASE_BASE_URL=https://github.com/kkirill412/proxyk-admin-linux/releases/download/v0.1.1
+make release RELEASE_BASE_URL=https://github.com/kkirill412/proxyk-admin-linux/releases/download/v0.1.2
 ```
 
-Три файла `bin/release/install.sh`, `bin/release/proxyk-admin-0.1.1.tar.gz` и
+Три файла `bin/release/install.sh`, `bin/release/proxyk-admin-0.1.2.tar.gz` и
 `bin/release/SHA256SUMS` хранятся в Git и прикладываются к GitHub Release соответствующей
 версии. Остальные файлы `bin` игнорируются. При выпуске новой версии обновите `VERSION`
 и адрес `RELEASE_BASE_URL`; опубликованные архивы уже выпущенных версий не заменяйте.
@@ -111,7 +111,9 @@ make release RELEASE_BASE_URL=https://github.com/kkirill412/proxyk-admin-linux/r
 сверяются с локальными; при несовпадении публикация останавливается без перезаписи.
 Пока реализован только этап 1, новые релизы автоматически помечаются `prerelease`.
 В выпущенный установщик встроены URL архива и его SHA-256; до распаковки проверяется
-хеш, пути архива и отсутствие ссылок. URL не должен указывать на изменяемый архив.
+хеш, пути архива и отсутствие ссылок. Распаковка совместима с системным Python 3.10/3.11
+без поддержки `tarfile` extraction filters; владельцы и специальные права из архива
+не восстанавливаются. URL не должен указывать на изменяемый архив.
 HTTPS защищает доставку самого установщика; SHA-256 не заменяет доверие к издателю.
 Скрипт из репозитория также принимает `SOURCE_URL` и `SOURCE_SHA256`, если запускается
 через stdin без встроенных данных релиза.

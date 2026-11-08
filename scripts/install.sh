@@ -52,14 +52,27 @@ find_source() {
         printf '%s  %s\n' "$sha" "$TEMP_SOURCE/source.tar.gz" | sha256sum --check --status || die 'SHA-256 архива не совпадает.'
         # Extract regular files/directories only; reject symlinks and traversal.
         python3 - "$TEMP_SOURCE" <<'PY'
-import pathlib, sys, tarfile
+import pathlib, shutil, sys, tarfile
 root = pathlib.Path(sys.argv[1])
 with tarfile.open(root / 'source.tar.gz') as archive:
-    for member in archive.getmembers():
+    members = archive.getmembers()
+    for member in members:
         path = pathlib.PurePosixPath(member.name)
         if path.is_absolute() or '..' in path.parts or not (member.isfile() or member.isdir()):
             raise SystemExit('Небезопасный путь в архиве')
-    archive.extractall(root / 'source', filter='data')
+    # Copy only validated file contents: older Python has no extraction filters.
+    # Use a fresh private directory and never restore archive owners or special bits.
+    destination = root / 'source'
+    destination.mkdir(mode=0o700)
+    for member in members:
+        target = destination / member.name
+        if member.isdir():
+            target.mkdir(mode=0o700, parents=True, exist_ok=True)
+        else:
+            target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            with archive.extractfile(member) as source, target.open('xb') as output:
+                shutil.copyfileobj(source, output)
+            target.chmod(0o700 if member.mode & 0o100 else 0o600)
 PY
         SOURCE_DIR=$TEMP_SOURCE/source
     fi
