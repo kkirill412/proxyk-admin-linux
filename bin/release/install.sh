@@ -4,8 +4,8 @@ set -Eeuo pipefail
 umask 077
 
 # pack-release.sh fills these values for a distributable curl | bash installer.
-RELEASE_SOURCE_URL='https://github.com/kkirill412/proxyk-admin-linux/releases/download/v0.2.0/proxyk-admin-0.2.0.tar.gz'
-RELEASE_SOURCE_SHA256='8de7fb1464a77c2e4f882a06810ac2496144a5b1ea4e99823ac2224ef87c3284'
+RELEASE_SOURCE_URL='https://github.com/kkirill412/proxyk-admin-linux/releases/download/v0.3.0/proxyk-admin-0.3.0.tar.gz'
+RELEASE_SOURCE_SHA256='ddfc8378f8cad2ed97933851f296edbe3b3c8606b27c2aec1ac19f426b715299'
 INSTALL_DIR=${INSTALL_DIR:-/opt/proxyk-admin}
 SOURCE_DIR=${SOURCE_DIR:-}
 TEMP_SOURCE=''
@@ -82,7 +82,7 @@ PY
 
 install_source() {
     if [[ -f $INSTALL_DIR/source/VERSION ]]; then
-        cmp -s "$SOURCE_DIR/VERSION" "$INSTALL_DIR/source/VERSION" || die 'Уже установлена другая версия. Для перехода с 0.1.2 на 0.2.0 запустите установщик с --upgrade.'
+        cmp -s "$SOURCE_DIR/VERSION" "$INSTALL_DIR/source/VERSION" || die 'Уже установлена другая версия. Проверьте путь обновления в README и запустите установщик с --upgrade.'
         return
     fi
     local pending
@@ -134,7 +134,7 @@ main() {
     if [[ ${1:-} == --upgrade ]]; then
         # shellcheck source=lib/upgrade.sh
         source "$SOURCE_DIR/scripts/lib/upgrade.sh"
-        upgrade_stage_two
+        upgrade_release
         return
     fi
     ensure_docker

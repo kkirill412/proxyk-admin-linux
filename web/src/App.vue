@@ -1,167 +1,120 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
-import { ElButton, ElTag, ElAlert } from "element-plus";
+import { onMounted, ref } from "vue";
+import { ElAlert, ElButton, ElForm, ElFormItem, ElInput } from "element-plus";
+import { ApiError, errorText, request, type Session } from "./api";
+import Dashboard from "./Dashboard.vue";
 
-type Health = { status: string; database: boolean; xray: boolean };
-const health = ref<Health | null>(null);
+const session = ref<Session | null>(null);
+const checking = ref(true);
+const busy = ref(false);
 const error = ref("");
-const loading = ref(false);
-const dark = ref(
-  localStorage.getItem("theme") === "dark" ||
-    (!localStorage.getItem("theme") &&
-      matchMedia("(prefers-color-scheme: dark)").matches),
-);
-const ready = computed(() => health.value?.status === "ready");
-let timer: ReturnType<typeof setInterval>;
+const username = ref("");
+const password = ref("");
+const theme = localStorage.getItem("theme");
+const dark = ref(theme === "dark" || (!theme && matchMedia("(prefers-color-scheme: dark)").matches));
 
 function applyTheme() {
   document.documentElement.classList.toggle("dark", dark.value);
 }
+
 function toggleTheme() {
   dark.value = !dark.value;
   localStorage.setItem("theme", dark.value ? "dark" : "light");
   applyTheme();
 }
-async function refresh() {
-  if (loading.value) return;
-  loading.value = true;
+
+async function restoreSession() {
   try {
-    const response = await fetch("/health/ready", {
-      cache: "no-store",
-      signal: AbortSignal.timeout(6000),
-    });
-    if (response.status !== 200 && response.status !== 503)
-      throw new Error("status");
-    const data: Health = await response.json();
-    if (typeof data.database !== "boolean" || typeof data.xray !== "boolean")
-      throw new Error("response");
-    health.value = data;
-    error.value = "";
-  } catch {
-    health.value = null;
-    error.value =
-      "Не удалось проверить сервер. Проверьте соединение и повторите попытку.";
+    session.value = await request<Session>("/api/auth/session");
+  } catch (cause) {
+    if (!(cause instanceof ApiError && cause.status === 401)) error.value = errorText(cause);
   } finally {
-    loading.value = false;
+    checking.value = false;
   }
 }
+
+async function login() {
+  if (busy.value) return;
+  error.value = "";
+  if (!username.value.trim() || !password.value) {
+    error.value = "Введите логин и пароль.";
+    return;
+  }
+  busy.value = true;
+  try {
+    session.value = await request<Session>("/api/auth/login", {
+      method: "POST",
+      body: { username: username.value.trim(), password: password.value },
+    });
+    password.value = "";
+  } catch (cause) {
+    error.value = errorText(cause);
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function logout() {
+  if (!session.value || busy.value) return;
+  busy.value = true;
+  error.value = "";
+  try {
+    await request<void>("/api/auth/logout", { method: "POST", csrf: session.value.csrf_token });
+    session.value = null;
+  } catch (cause) {
+    if (cause instanceof ApiError && cause.status === 401) session.value = null;
+    else error.value = errorText(cause);
+  } finally {
+    busy.value = false;
+  }
+}
+
+function expireSession() {
+  if (!session.value) return;
+  session.value = null;
+  error.value = "Сеанс завершился. Войдите снова.";
+}
+
 applyTheme();
-onMounted(() => {
-  void refresh();
-  timer = setInterval(() => void refresh(), 15000);
-});
-onUnmounted(() => clearInterval(timer));
+onMounted(restoreSession);
 </script>
 
 <template>
   <div class="shell">
-    <header>
-      <a href="/" class="brand" aria-label="ProxyK, главная"
-        ><span class="mark">P<span>↗</span></span
-        >proxy<span class="brand-k">k</span
-        ><span class="brand-admin">ADMIN</span></a
-      >
-      <ElButton text @click="toggleTheme">{{
-        dark ? "Светлая тема" : "Тёмная тема"
-      }}</ElButton>
-    </header>
-    <main>
-      <div class="eyebrow"><span></span>ВАШ ЛИЧНЫЙ СЕРВЕР</div>
-      <div class="heading-row">
-        <div>
-          <h1>Всё начинается<br />с надёжной основы.</h1>
-          <p class="intro">Состояние сервисов вашей VPN-панели.</p>
-        </div>
-        <ElButton :loading="loading" @click="refresh"
-          >Проверить соединение ↗</ElButton
-        >
+    <header class="site-header">
+      <a href="/" class="brand" aria-label="ProxyK Admin, главная">
+        <span class="mark" aria-hidden="true">P<span>↗</span></span>
+        proxy<span class="brand-k">k</span><span class="brand-admin">ADMIN</span>
+      </a>
+      <div class="header-actions">
+        <ElButton text @click="toggleTheme">{{ dark ? "Светлая тема" : "Тёмная тема" }}</ElButton>
+        <ElButton v-if="session" :loading="busy" @click="logout">Выйти</ElButton>
       </div>
-      <ElAlert
-        v-if="error"
-        :title="error"
-        type="error"
-        :closable="false"
-        show-icon
-      />
-      <section
-        class="status-grid"
-        aria-label="Состояние сервера"
-        aria-live="polite"
-      >
-        <article class="status-card primary">
-          <div class="card-top">
-            <span>Система</span><span class="card-icon">↗</span>
-          </div>
-          <div class="status-title">
-            {{
-              ready
-                ? "На связи"
-                : health
-                  ? "Нужна проверка"
-                  : loading
-                    ? "Проверяем…"
-                    : "Нет связи"
-            }}
-          </div>
-          <p>
-            {{
-              ready
-                ? "Основные сервисы отвечают"
-                : "Статус обновляется автоматически"
-            }}
-          </p>
-          <div class="signal">
-            <i :class="{ online: ready }"></i
-            >{{ ready ? "СОЕДИНЕНИЕ УСТАНОВЛЕНО" : "ОЖИДАНИЕ ГОТОВНОСТИ" }}
-          </div>
-        </article>
-        <article class="status-card">
-          <div class="card-top">
-            <span>Хранилище данных</span><span class="card-icon">▤</span>
-          </div>
-          <div class="status-title">
-            {{ health?.database ? "Готово" : health ? "Недоступно" : "—" }}
-          </div>
-          <p>Постоянное хранение настроек</p>
-          <ElTag
-            :type="health?.database ? 'success' : 'info'"
-            effect="plain"
-            round
-            >{{ health?.database ? "Доступно" : "Нет подтверждения" }}</ElTag
-          >
-        </article>
-        <article class="status-card">
-          <div class="card-top">
-            <span>VPN-сервис</span><span class="card-icon">⌁</span>
-          </div>
-          <div class="status-title">
-            {{ health?.xray ? "Запущен" : health ? "Недоступен" : "—" }}
-          </div>
-          <p>Соединение с Xray-core</p>
-          <ElTag
-            :type="health?.xray ? 'success' : 'info'"
-            effect="plain"
-            round
-            >{{ health?.xray ? "Отвечает" : "Нет подтверждения" }}</ElTag
-          >
-        </article>
-      </section>
-      <section class="notice">
-        <span class="notice-index">01</span>
-        <div>
-          <h2>Базовая установка</h2>
-          <p>
-            Сейчас доступна проверка инфраструктуры. Вход в панель и управление
-            пользователями появятся на следующих этапах разработки.
-            VPN-подключения пока не выдаются.
-          </p>
-        </div>
-        <span class="stage">ЭТАП 1 / 4</span>
+    </header>
+    <main v-if="checking" class="login-main" aria-live="polite">
+      <p class="muted">Проверяем сеанс…</p>
+    </main>
+    <main v-else-if="session" class="dashboard-main">
+      <ElAlert v-if="error" :title="error" type="error" :closable="false" show-icon />
+      <Dashboard :session="session" @expired="expireSession" />
+    </main>
+    <main v-else class="login-main">
+      <section class="login-card" aria-labelledby="login-title">
+        <div class="eyebrow"><span></span>ПАНЕЛЬ УПРАВЛЕНИЯ VPN</div>
+        <h1 id="login-title">Вход в панель</h1>
+        <p class="intro">Введите данные администратора, полученные при установке.</p>
+        <ElAlert v-if="error" :title="error" type="error" :closable="false" show-icon />
+        <ElForm label-position="top" @submit.prevent="login">
+          <ElFormItem label="Логин" for="login-username">
+            <ElInput id="login-username" v-model="username" autocomplete="username" :disabled="busy" />
+          </ElFormItem>
+          <ElFormItem label="Пароль" for="login-password">
+            <ElInput id="login-password" v-model="password" type="password" autocomplete="current-password" :disabled="busy" />
+          </ElFormItem>
+          <ElButton type="primary" native-type="submit" :loading="busy" class="login-submit">Войти</ElButton>
+        </ElForm>
       </section>
     </main>
-    <footer>
-      <span>ProxyK Admin</span
-      ><span>Просто. Приватно. Под вашим контролем.</span>
-    </footer>
+    <footer class="site-footer"><span>ProxyK Admin</span><span>Управление доступом к VPN</span></footer>
   </div>
 </template>

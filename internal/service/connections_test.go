@@ -36,7 +36,7 @@ func TestConnectionQRRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	decoded, err := qrcode.NewQRCodeReader().Decode(bitmap, nil)
+	decoded, err := qrcode.NewQRCodeReader().Decode(bitmap, map[gozxing.DecodeHintType]any{gozxing.DecodeHintType_PURE_BARCODE: true})
 	if err != nil || decoded.GetText() != link {
 		t.Fatalf("QR does not contain exact connection URI: %v", err)
 	}

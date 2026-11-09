@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 
 	"proxyk-admin/internal/domain"
 )
@@ -81,7 +80,7 @@ func (s *Store) SetVPNUserEnabled(ctx context.Context, id int64, enabled bool) e
 
 func (s *Store) SetVPNUserLimit(ctx context.Context, id int64, limit *int64) error {
 	if limit != nil && *limit < 0 {
-		return fmt.Errorf("traffic limit must not be negative")
+		return domain.ErrInvalidTrafficLimit
 	}
 	return requireVPNUser(s.DB.ExecContext(ctx, `UPDATE vpn_users SET traffic_limit_bytes = ?,
 		enabled = CASE WHEN ? IS NOT NULL AND uplink_bytes >= ? - downlink_bytes THEN 0 ELSE enabled END,

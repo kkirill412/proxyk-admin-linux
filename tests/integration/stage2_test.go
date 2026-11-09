@@ -187,7 +187,7 @@ func TestStageTwoVPNUserLifecycle(t *testing.T) {
 	stopApp()
 	stopXray()
 	readStageTwoTraffic(t, env, app, id) // Saved totals remain readable with Xray stopped.
-	start(t, env, xray, "run", "-config", configPath)
+	stopXray = start(t, env, xray, "run", "-config", configPath)
 	waitStageTwoUser(t, handlers, email, false)
 	requireStageTwoNoLink(t, env, app, id) // Old acknowledgement is insufficient after restart.
 	requireStageTwoCommandFailure(t, env, app, "create", "Pending")
@@ -212,6 +212,15 @@ func TestStageTwoVPNUserLifecycle(t *testing.T) {
 	waitStageTwoUser(t, handlers, email, false)
 	requireStageTwoBlocked(t, client, site.URL, &requests)
 	requireStageTwoNoLink(t, env, app, id)
+
+	t.Run("web administration", func(t *testing.T) {
+		checkWebAdministration(t, webFixture{
+			env: env, xray: xray, xrayConfig: configPath, stopXray: stopXray,
+			dataDir: filepath.Join(dir, "data"), tlsDir: tlsDir,
+			panelURL: fmt.Sprintf("https://127.0.0.1:%d", appPort), vpnPort: vpnPort,
+			siteURL: site.URL, siteRequests: &requests,
+		})
+	})
 }
 
 func stageTwoPorts(t *testing.T) (api, app, vpn, proxy int) {

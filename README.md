@@ -1,11 +1,8 @@
 # ProxyK Admin
 
 Минималистичная VPN-панель для Linux: Go, SQLite, Vue 3 и Xray-core.
-В текущих исходниках реализована серверная часть **этапа 2**: пользователи, ссылки
-VLESS/REALITY, QR-коды, накопительная статистика и лимиты трафика.
-Эти дополнения ещё не выпущены отдельным релизом. Опубликованный v0.2.0 содержит
-начальную реализацию управления пользователями и текущие счётчики Xray.
-Веб-страница показывает готовность базы и Xray. Вход в панель относится к этапу 3.
+В версии v0.3.0 доступна веб-панель администратора с управлением
+VPN-пользователями, ссылками VLESS/REALITY, QR-кодами, статистикой и лимитами трафика.
 
 Статус проведённых проверок и оставшиеся ограничения: [docs/validation.md](docs/validation.md).
 
@@ -82,18 +79,18 @@ sudo env ADMIN_PORT=2053 NONINTERACTIVE=1 TLS_MODE=selfsigned bash scripts/insta
 
 ### Однокомандная установка через HTTPS
 
-Установка версии 0.2.0 из GitHub Release. Для существующей v0.1.2 используйте
-[переход на v0.2.0](#переход-с-v012-на-v020). [GitHub Release](https://github.com/kkirill412/proxyk-admin-linux/releases/tag/v0.2.0)
+Для новой установки используйте релиз [v0.3.0](https://github.com/kkirill412/proxyk-admin-linux/releases/tag/v0.3.0).
+Для существующей установки следуйте [инструкции по обновлению](#обновление-и-резервное-копирование).
 
 ```bash
-curl -fsSL https://github.com/kkirill412/proxyk-admin-linux/releases/download/v0.2.0/install.sh | sudo bash
+curl -fsSL https://github.com/kkirill412/proxyk-admin-linux/releases/download/v0.3.0/install.sh | sudo bash
 ```
 
 Docker Engine, Compose Plugin и недостающие системные зависимости устанавливаются
 автоматически. Скрипт запрашивает порт панели; для установки без ввода:
 
 ```bash
-curl -fsSL https://github.com/kkirill412/proxyk-admin-linux/releases/download/v0.2.0/install.sh | sudo env ADMIN_PORT=2053 NONINTERACTIVE=1 TLS_MODE=acme bash
+curl -fsSL https://github.com/kkirill412/proxyk-admin-linux/releases/download/v0.3.0/install.sh | sudo env ADMIN_PORT=2053 NONINTERACTIVE=1 TLS_MODE=acme bash
 ```
 
 Прямая передача `scripts/install.sh` с `raw.githubusercontent.com` в Bash без исходников
@@ -102,10 +99,10 @@ curl -fsSL https://github.com/kkirill412/proxyk-admin-linux/releases/download/v0
 Для подготовки файлов релиза выполните из клона проекта:
 
 ```bash
-make release RELEASE_BASE_URL=https://github.com/kkirill412/proxyk-admin-linux/releases/download/v0.2.0
+make release RELEASE_BASE_URL=https://github.com/kkirill412/proxyk-admin-linux/releases/download/v0.3.0
 ```
 
-Три файла `bin/release/install.sh`, `bin/release/proxyk-admin-0.2.0.tar.gz` и
+Три файла `bin/release/install.sh`, `bin/release/proxyk-admin-0.3.0.tar.gz` и
 `bin/release/SHA256SUMS` хранятся в Git и прикладываются к GitHub Release соответствующей
 версии. Остальные файлы `bin` игнорируются. При выпуске новой версии обновите `VERSION`
 и адрес `RELEASE_BASE_URL`; опубликованные архивы уже выпущенных версий не заменяйте.
@@ -134,8 +131,10 @@ HTTPS защищает доставку самого установщика; SHA
 При прерывании установки данные могут оставаться в `data/initial-credentials.json`;
 повторный запуск завершит установку и безопасно передаст их.
 
-Данные администратора подготовлены для этапа 3. Текущая веб-страница показывает
-состояние сервисов. Управление пользователями из текущего кода доступно через CLI.
+Откройте выданный HTTPS-адрес в браузере и войдите
+с установленными логином и паролем администратора. Сессия действует до 12 часов,
+сохраняется при обновлении страницы и завершается кнопкой «Выйти». Попытки входа
+ограничены до 5 в минуту с одного IP и до 30 в минуту на всю панель.
 
 Для самоподписанного сертификата перед вводом любых данных сравните SHA-256 fingerprint
 в просмотрщике сертификата браузера с результатом команды на сервере по доверенному SSH:
@@ -155,14 +154,23 @@ sudo cat data/initial-credentials.json
 sudo rm data/initial-credentials.json
 ```
 
-Команда не выводит пароль в Docker logs. Она сохраняет логин, меняет хеш и увеличивает
-версию учётных данных для будущей инвалидизации сессий. После сброса удалите также
+Команда не выводит пароль в Docker logs. Она сохраняет логин, меняет хеш и завершает
+все открытые сессии администратора. После сброса удалите также
 старый `/opt/proxyk-admin/initial-credentials.json`, если он сохранился от установки.
 
 ## VPN-пользователи
 
-Раздел описывает текущие исходники. В опубликованном v0.2.0 отсутствуют команды
-`limit`, `qr`, подтверждение применения изменений и сохранение трафика.
+В веб-панели нажмите «Создать пользователя», введите имя и при необходимости задайте
+лимит. После подтверждения Xray панель покажет ссылку и QR-код для импорта. Если
+Xray ещё не подтвердил доступ, дождитесь синхронизации. Строка сохранённого
+пользователя появится в списке со статусом ожидания.
+
+Таблица показывает статус доступа, расход, лимит и дату создания. Через действия
+в строке можно открыть подключение, изменить имя или лимит, заблокировать,
+разблокировать и удалить пользователя.
+
+### Управление через CLI
+
 Подключитесь к серверу по SSH и создайте пользователя:
 
 ```bash
@@ -304,9 +312,23 @@ SQLite: WAL, `busy_timeout=10000`, foreign keys, `synchronous=FULL`, один co
 
 ## Обновление и резервное копирование
 
+### Переход с v0.2.0 на v0.3.0
+
+На сервере со стандартной установкой v0.2.0 выполните команду по SSH.
+
+```bash
+curl -fsSL https://github.com/kkirill412/proxyk-admin-linux/releases/download/v0.3.0/install.sh | sudo bash -s -- --upgrade
+```
+
+Установщик делает копию каталога `data`, исходников и Compose в
+`/opt/proxyk-admin/backups/from-0.2.0-*`. Миграции добавляют поля для учёта
+трафика, если их ещё нет, и таблицу сессий администратора. После запуска
+войдите через существующий HTTPS-адрес с прежним логином и паролем.
+
 ### Переход с v0.1.2 на v0.2.0
 
 На сервере со стандартной установкой v0.1.2 выполните команду по SSH.
+Затем обновитесь с v0.2.0 до v0.3.0 по инструкции выше.
 
 ```bash
 curl -fsSL https://github.com/kkirill412/proxyk-admin-linux/releases/download/v0.2.0/install.sh | sudo bash -s -- --upgrade
@@ -393,5 +415,6 @@ sudo systemctl status docker proxyk-admin-renew.timer
 - [Certbot: standalone и автоматическое продление](https://eff-certbot.readthedocs.io/en/stable/using.html).
 - [Установка Docker на Ubuntu](https://docs.docker.com/engine/install/ubuntu/).
 - [SQLite PRAGMA](https://www.sqlite.org/pragma.html).
+- [Защита Go от межсайтовых запросов](https://pkg.go.dev/net/http#CrossOriginProtection).
 
 3x-ui использован только как функциональный ориентир. Его исходный код не копировался.

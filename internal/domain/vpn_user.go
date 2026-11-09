@@ -8,6 +8,9 @@ import (
 const VLESSFlow = "xtls-rprx-vision"
 
 var ErrVPNUserNotFound = errors.New("VPN user not found")
+var ErrVPNUserBlocked = errors.New("VPN user is blocked")
+var ErrVPNUserName = errors.New("VPN user name must contain 1 to 80 characters without control characters")
+var ErrInvalidTrafficLimit = errors.New("traffic limit must not be negative")
 var ErrTrafficLimit = errors.New("traffic limit exhausted; increase the limit before enabling the user")
 var ErrVPNSyncPending = errors.New("VPN changes have not been confirmed by Xray")
 

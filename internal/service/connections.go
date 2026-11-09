@@ -29,6 +29,6 @@ func (Connections) VLESS(user domain.VPNUser, settings domain.ServerSettings) (s
 }
 
 func (Connections) QR(link string) ([]byte, error) {
-	// A four-module quiet zone is retained for reliable scanning.
-	return qrcode.Encode(link, qrcode.Medium, 512)
+	// Use an integer number of pixels per module and keep the quiet zone.
+	return qrcode.Encode(link, qrcode.Medium, -8)
 }

@@ -27,7 +27,7 @@ func TestReadinessRequiresDatabaseAndXray(t *testing.T) {
 		{"xray unavailable", nil, errors.New("private API detail"), 503},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			handler := controller.Handler(usecase.Health{Database: checker{test.db}, Xray: checker{test.xray}}, fstest.MapFS{"index.html": {Data: []byte("frontend")}})
+			handler := controller.Handler(usecase.Health{Database: checker{test.db}, Xray: checker{test.xray}}, fstest.MapFS{"index.html": {Data: []byte("frontend")}}, nil)
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, httptest.NewRequest("GET", "/health/ready", nil))
 			if recorder.Code != test.status {

@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 
-# This transition is intentionally limited to the installer layout of 0.1.2.
-upgrade_stage_two() (
+# This transition is intentionally limited to the installer layout of 0.2.0.
+upgrade_release() (
     local backup restore=0
+    local from_version=0.2.0 to_version=0.3.0
     [[ -f $INSTALL_DIR/source/VERSION && -f $INSTALL_DIR/data/app.db && -f $INSTALL_DIR/.env ]] || \
         fail 'Не найдена установка ProxyK Admin с базой данных.'
-    [[ $(<"$INSTALL_DIR/source/VERSION") == 0.1.2 && $(<"$SOURCE_DIR/VERSION") == 0.2.0 ]] || \
-        fail 'Этот режим обновляет только v0.1.2 до v0.2.0.'
+    [[ $(<"$INSTALL_DIR/source/VERSION") == "$from_version" && $(<"$SOURCE_DIR/VERSION") == "$to_version" ]] || \
+        fail "Этот режим обновляет только v$from_version до v$to_version."
     cmp -s "$INSTALL_DIR/compose.yaml" "$INSTALL_DIR/source/deploy/compose.yaml" || \
         fail 'Файл compose.yaml изменён. Требуется отдельный план обновления.'
     load_settings
@@ -15,12 +16,12 @@ upgrade_stage_two() (
         fail 'Запустите Xray перед обновлением.'
 
     install -d -m 700 "$INSTALL_DIR/backups"
-    backup=$(mktemp -d "$INSTALL_DIR/backups/from-0.1.2-XXXXXXXX")
+    backup=$(mktemp -d "$INSTALL_DIR/backups/from-$from_version-XXXXXXXX")
     mkdir -m 700 "$backup/next-source"
     copy_source "$SOURCE_DIR" "$backup/next-source"
     unset SOURCE_DIR
     install -m 600 "$backup/next-source/deploy/compose.yaml" "$backup/next-compose.yaml"
-    info 'Сборка образа v0.2.0. Панель продолжает работать.'
+    info "Сборка образа v$to_version. Панель продолжает работать."
     SOURCE_DIR="$backup/next-source" docker compose --project-directory "$INSTALL_DIR" \
         --env-file "$INSTALL_DIR/.env" -f "$backup/next-compose.yaml" build app
 
@@ -36,7 +37,7 @@ upgrade_stage_two() (
     mv -T -- "$backup/next-source" "$INSTALL_DIR/source"
     mv -T -- "$backup/next-compose.yaml" "$INSTALL_DIR/compose.yaml"
     start_upgraded_app
-    printf 'Обновлено до v0.2.0. Резервная копия: %s\n' "$backup"
+    printf 'Обновлено до v%s. Резервная копия: %s\n' "$to_version" "$backup"
 )
 
 start_upgraded_app() {
@@ -48,7 +49,7 @@ finish_upgrade() {
     local status=$1 backup=$2 restore=$3
     if (( status == 0 )); then return; fi
     info 'Обновление прервалось. Восстанавливается предыдущая версия.'
-    if (( restore )) && ! restore_stage_one "$backup"; then
+    if (( restore )) && ! restore_previous_release "$backup"; then
         info "Не удалось восстановить файлы. Резервная копия: $backup"
         return
     fi
@@ -59,7 +60,7 @@ finish_upgrade() {
     fi
 }
 
-restore_stage_one() {
+restore_previous_release() {
     local backup=$1
     compose stop app || return
     if [[ -d $backup/source ]]; then

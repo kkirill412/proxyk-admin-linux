@@ -136,6 +136,72 @@ for scenario in fresh conflicts compose_missing ready stopped repeat disabled se
             ;;
     esac
 done
+
+# Exercise actual file backup/restore without stopping a host container.
+test_release_upgrade() {
+    # shellcheck source=lib/common.sh
+    source "$1/scripts/lib/common.sh"
+    # shellcheck source=lib/upgrade.sh
+    source "$1/scripts/lib/upgrade.sh"
+    INSTALL_DIR=$2/install SOURCE_DIR=$2/next
+    local scenario=$3
+    docker() {
+        if [[ $* == info ]]; then return; fi
+        [[ $1 == compose && $3 == "$INSTALL_DIR" && $5 == "$INSTALL_DIR/.env" ]] || fail 'Неверный проект Compose.'
+        local compose_file=$7
+        shift 7
+        case "$*" in
+            'exec -T xray /usr/local/bin/xray api statsquery --server=127.0.0.1:10085') ;;
+            'build app')
+                [[ $(<"$INSTALL_DIR/source/VERSION") == 0.2.0 && $(<"$SOURCE_DIR/VERSION") == 0.3.0 ]] || fail 'Неверный исходный код при сборке.'
+                cmp -s "$compose_file" "$SOURCE_DIR/deploy/compose.yaml"
+                ;;
+            'stop app') ;;
+            'up -d --no-build --no-deps --wait --wait-timeout 180 app')
+                cmp -s "$compose_file" "$INSTALL_DIR/source/deploy/compose.yaml" || fail 'Версия Compose и код различаются.'
+                if [[ $scenario == rollback && $(<"$INSTALL_DIR/source/VERSION") == 0.3.0 ]]; then
+                    printf 'new migration\n' >>"$INSTALL_DIR/data/app.db"
+                    printf 'new traffic\n' >"$INSTALL_DIR/data/traffic-pending.json"
+                    return 1
+                fi
+                ;;
+            'exec -T app /usr/local/bin/proxyk-admin healthcheck') ;;
+            *) fail "Неожиданная команда обновления: $*" ;;
+        esac
+    }
+    upgrade_release
+}
+export -f test_release_upgrade
+for scenario in success rollback; do
+    fixture=$TEMP_DIR/upgrade-$scenario
+    install_dir=$fixture/install
+    next_dir=$fixture/next
+    mkdir -p "$install_dir"/{data,source/deploy,xray,tls} "$next_dir"/{cmd,internal,web,deploy,scripts}
+    printf '0.2.0\n' >"$install_dir/source/VERSION"
+    printf '0.3.0\n' >"$next_dir/VERSION"
+    printf 'image: proxyk-admin:0.2.0\n' >"$install_dir/source/deploy/compose.yaml"
+    printf 'image: proxyk-admin:0.3.0\n' >"$next_dir/deploy/compose.yaml"
+    cp "$install_dir/source/deploy/compose.yaml" "$install_dir/compose.yaml"
+    touch "$next_dir/go.mod" "$next_dir/go.sum" "$next_dir/.dockerignore" "$next_dir/scripts/install.sh"
+    printf 'PUBLIC_IP=8.8.8.8\nADMIN_PORT=2053\nVPN_PORT=443\nTLS_MODE=acme\n' >"$install_dir/.env"
+    printf 'previous database\n' >"$install_dir/data/app.db"
+    printf 'previous WAL\n' >"$install_dir/data/app.db-wal"
+    printf 'previous traffic\n' >"$install_dir/data/traffic-pending.json"
+    printf 'existing Xray settings\n' >"$install_dir/xray/config.json"
+    printf 'existing TLS certificate\n' >"$install_dir/tls/fullchain.pem"
+    cp -a "$install_dir/data" "$fixture/original-data"
+    sha256sum "$install_dir/.env" "$install_dir/xray/config.json" "$install_dir/tls/fullchain.pem" >"$fixture/settings.sha"
+    if bash -Eeuo pipefail -c 'test_release_upgrade "$@"' _ "$ROOT" "$fixture" "$scenario" >"$fixture/output" 2>&1; then
+        [[ $scenario == success && $(<"$install_dir/source/VERSION") == 0.3.0 ]] || fail 'Ошибка обновления не обнаружена.'
+    else
+        [[ $scenario == rollback && $(<"$install_dir/source/VERSION") == 0.2.0 ]] || { cat "$fixture/output" >&2; fail 'Обновление не удалось.'; }
+        grep -qx 'Предыдущая версия восстановлена.' "$fixture/output" || { cat "$fixture/output" >&2; fail 'Старое приложение не запущено.'; }
+    fi
+    backup=("$install_dir/backups/from-0.2.0-"*)
+    diff -r "$fixture/original-data" "${backup[0]}/data"
+    diff -r "$fixture/original-data" "$install_dir/data"
+    sha256sum --check --status "$fixture/settings.sha"
+done
 (
     INSTALL_DIR=$TEMP_DIR/first
     mkdir -p "$INSTALL_DIR"

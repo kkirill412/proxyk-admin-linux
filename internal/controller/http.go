@@ -9,8 +9,11 @@ import (
 	"proxyk-admin/internal/usecase"
 )
 
-func Handler(health usecase.Health, frontend fs.FS) http.Handler {
+func Handler(health usecase.Health, frontend fs.FS, admin *AdminAPI) http.Handler {
 	mux := http.NewServeMux()
+	if admin != nil {
+		admin.register(mux)
+	}
 	mux.HandleFunc("GET /health/live", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "alive"})

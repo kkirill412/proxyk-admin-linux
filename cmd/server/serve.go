@@ -53,8 +53,9 @@ func serve(ctx context.Context, cfg config.Config, store *sqlite.Store) error {
 		cancelSync()
 		<-syncDone
 	}()
+	admin := &controller.AdminAPI{Auth: controller.NewAuth(store), Users: usecase.VPNUsers{Store: store, Xray: xrayClient}}
 	server := &http.Server{
-		Addr: cfg.ListenAddr, Handler: controller.Handler(usecase.Health{Database: store, Xray: userSync}, frontend),
+		Addr: cfg.ListenAddr, Handler: controller.Handler(usecase.Health{Database: store, Xray: userSync}, frontend, admin),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second,
 		WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10,
 		TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12, GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {

@@ -1,5 +1,20 @@
 package domain
 
+import "errors"
+
+var ErrAdminSessionInvalid = errors.New("invalid administrator session")
+
+type Administrator struct {
+	Username          string `json:"username"`
+	PasswordHash      string `json:"-"`
+	CredentialVersion int64  `json:"-"`
+}
+
+type AdminSession struct {
+	Username  string `json:"username"`
+	CSRFToken string `json:"csrf_token"`
+}
+
 // Credentials are written only to a protected file, never to application logs.
 type Credentials struct {
 	Username string `json:"username"`

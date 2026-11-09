@@ -30,7 +30,7 @@ func (u VPNUsers) Create(ctx context.Context, name string, limit *int64) (domain
 		return domain.VPNUser{}, err
 	}
 	if limit != nil && *limit < 0 {
-		return domain.VPNUser{}, fmt.Errorf("traffic limit must not be negative")
+		return domain.VPNUser{}, domain.ErrInvalidTrafficLimit
 	}
 	credential, err := uuid.NewRandom()
 	if err != nil {
@@ -43,7 +43,11 @@ func (u VPNUsers) Create(ctx context.Context, name string, limit *int64) (domain
 	if err := u.Wait(ctx, user.ID, false); err != nil {
 		return user, err
 	}
-	return u.Store.VPNUser(ctx, user.ID)
+	confirmed, err := u.Store.VPNUser(ctx, user.ID)
+	if err != nil {
+		return user, err
+	}
+	return confirmed, nil
 }
 
 func (u VPNUsers) Rename(ctx context.Context, id int64, name string) error {
@@ -111,7 +115,7 @@ func (u VPNUsers) Link(ctx context.Context, id int64) (string, error) {
 		return "", err
 	}
 	if !user.Allowed() {
-		return "", fmt.Errorf("VPN user %d is blocked", id)
+		return "", fmt.Errorf("VPN user %d: %w", id, domain.ErrVPNUserBlocked)
 	}
 	if user.Pending {
 		return "", domain.ErrVPNSyncPending
@@ -139,7 +143,7 @@ func (u VPNUsers) QR(ctx context.Context, id int64) ([]byte, error) {
 func vpnUserName(name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" || !utf8.ValidString(name) || utf8.RuneCountInString(name) > 80 || strings.ContainsFunc(name, unicode.IsControl) {
-		return "", fmt.Errorf("VPN user name must contain 1 to 80 characters without control characters")
+		return "", domain.ErrVPNUserName
 	}
 	return name, nil
 }

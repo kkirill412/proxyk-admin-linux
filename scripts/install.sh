@@ -82,7 +82,7 @@ PY
 
 install_source() {
     if [[ -f $INSTALL_DIR/source/VERSION ]]; then
-        cmp -s "$SOURCE_DIR/VERSION" "$INSTALL_DIR/source/VERSION" || die 'Уже установлена другая версия. Для перехода с 0.1.2 на 0.2.0 запустите установщик с --upgrade.'
+        cmp -s "$SOURCE_DIR/VERSION" "$INSTALL_DIR/source/VERSION" || die 'Уже установлена другая версия. Проверьте путь обновления в README и запустите установщик с --upgrade.'
         return
     fi
     local pending
@@ -134,7 +134,7 @@ main() {
     if [[ ${1:-} == --upgrade ]]; then
         # shellcheck source=lib/upgrade.sh
         source "$SOURCE_DIR/scripts/lib/upgrade.sh"
-        upgrade_stage_two
+        upgrade_release
         return
     fi
     ensure_docker
